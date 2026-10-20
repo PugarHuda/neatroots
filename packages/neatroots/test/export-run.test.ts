@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkFiles } from "../src/checks/offline.js";
 import { parseTraceFile } from "../src/ingest/importers/index.js";
+import { encodeTraceJson } from "../src/otlp/codec.js";
 import { batch, hex, llmSpan, makeRoots, span, toolSpan, type TestRoots } from "./helpers.js";
 
 let t: TestRoots | undefined;
@@ -36,6 +37,15 @@ describe("GET /api/runs/:traceId/otlp", () => {
     expect(r.errors).toEqual([]);
     expect(r.runs[0].trace_id).toBe(traceId);
     expect(r.runs[0].findings.map((f) => f.check_id)).toContain("tool-error-streak");
+  });
+
+  it("keeps the resource and scope schema URLs where OTLP puts them", () => {
+    const b = batch([span({ traceId: hex(16), name: "a", kind: "workflow" })], "svc");
+    b.resource.schemaUrl = "https://opentelemetry.io/schemas/1.26.0";
+    b.scope.schemaUrl = "https://opentelemetry.io/schemas/1.27.0";
+    const [back] = parseTraceFile(JSON.stringify(encodeTraceJson([b])), "run.json");
+    expect(back.resource.schemaUrl).toBe("https://opentelemetry.io/schemas/1.26.0");
+    expect(back.scope.schemaUrl).toBe("https://opentelemetry.io/schemas/1.27.0");
   });
 
   it("answers 404 for a run it doesn't have", async () => {
