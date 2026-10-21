@@ -40,13 +40,20 @@ const flag = (name: string) => `--${name.replace(/[A-Z]/g, (c) => `-${c.toLowerC
 /** Writes an exported run atomically: a temp file in the same directory, renamed over the target, so an interrupted
  *  export never leaves a half-written JSON file for `neatroots check` to fail on in CI. The temp name is random and
  *  created exclusively ("wx"), so a file or symlink planted next to the target is never followed or truncated, and
- *  cleanup removes only the file this export created. */
+ *  cleanup removes only the file this export created. Replacing an export keeps that file's permissions. */
 export function writeExport(out: string, doc: unknown): void {
   const json = JSON.stringify(doc);
+  let mode: number | undefined;
+  try {
+    mode = fs.statSync(out).mode & 0o777;
+  } catch {
+    /* a new file: umask defaults */
+  }
   const tmp = `${out}.${randomBytes(6).toString("hex")}.neatroots-tmp`;
   const fd = fs.openSync(tmp, "wx");
   try {
     fs.writeFileSync(fd, json);
+    if (mode !== undefined) fs.fchmodSync(fd, mode);
     fs.closeSync(fd);
     fs.renameSync(tmp, out);
   } catch (e) {
@@ -60,8 +67,9 @@ export function writeExport(out: string, doc: unknown): void {
   }
 }
 
-/** The follow-up command, with the path quoted for a POSIX shell so `-o "my runs/a.json"` stays one argument. */
-export const checkHint = (out: string) => `neatroots check ${shellQuote(out)}`;
+/** The follow-up command, with the path quoted for a POSIX shell so `-o "my runs/a.json"` stays one argument, and
+ *  after `--` when it starts with a dash, which commander would otherwise read as an option. */
+export const checkHint = (out: string) => `neatroots check ${out.startsWith("-") ? "-- " : ""}${shellQuote(out)}`;
 
 export function registerDataCommands(program: Command): void {
   const imp = program

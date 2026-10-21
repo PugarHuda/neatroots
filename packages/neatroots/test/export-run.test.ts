@@ -85,5 +85,14 @@ describe("neatroots export writes the file atomically", () => {
   it("quotes the path in the printed check command", () => {
     expect(checkHint("abc123.json")).toBe("neatroots check abc123.json");
     expect(checkHint("my runs/bad run.json")).toBe("neatroots check 'my runs/bad run.json'");
+    expect(checkHint("-report.json")).toBe("neatroots check -- -report.json");
+  });
+
+  it.skipIf(process.platform === "win32")("keeps an existing export's permissions when replacing it", () => {
+    const out = path.join(dir, "private.json");
+    fs.writeFileSync(out, "{}", { mode: 0o600 });
+    fs.chmodSync(out, 0o600);
+    writeExport(out, { resourceSpans: [] });
+    expect(fs.statSync(out).mode & 0o777).toBe(0o600);
   });
 });
