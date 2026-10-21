@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkFiles } from "../src/checks/offline.js";
+import { writeExport } from "../src/cli/data.js";
 import { parseTraceFile } from "../src/ingest/importers/index.js";
 import { encodeTraceJson } from "../src/otlp/codec.js";
 import { batch, hex, llmSpan, makeRoots, span, toolSpan, type TestRoots } from "./helpers.js";
@@ -51,5 +52,24 @@ describe("GET /api/runs/:traceId/otlp", () => {
   it("answers 404 for a run it doesn't have", async () => {
     t = await makeRoots({ serve: true, noEngine: true });
     expect((await fetch(`${t.url}/api/runs/${hex(16)}/otlp`)).status).toBe(404);
+  });
+});
+
+describe("neatroots export writes the file atomically", () => {
+  it("replaces an existing export and leaves no temp file", () => {
+    const out = path.join(dir, "replace.json");
+    fs.writeFileSync(out, "old");
+    writeExport(out, { resourceSpans: [] });
+    expect(JSON.parse(fs.readFileSync(out, "utf8"))).toEqual({ resourceSpans: [] });
+    expect(fs.readdirSync(dir).filter((f) => f.startsWith("replace.json."))).toEqual([]);
+  });
+
+  it("a write that fails part-way keeps the previous file intact", () => {
+    const out = path.join(dir, "keep.json");
+    fs.writeFileSync(out, '{"resourceSpans":[]}');
+    // JSON.stringify throws on a BigInt: the export fails and the previous file must be untouched.
+    expect(() => writeExport(out, { resourceSpans: [{ n: 1n }] })).toThrow();
+    expect(fs.readFileSync(out, "utf8")).toBe('{"resourceSpans":[]}');
+    expect(fs.existsSync(`${out}.neatroots-tmp`)).toBe(false);
   });
 });

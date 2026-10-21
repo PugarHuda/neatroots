@@ -35,6 +35,19 @@ async function needRunning(): Promise<number> {
 
 const flag = (name: string) => `--${name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
 
+/** Writes an exported run atomically: a temp file in the same directory, renamed over the target, so an interrupted
+ *  export never leaves a half-written JSON file for `neatroots check` to fail on in CI. */
+export function writeExport(out: string, doc: unknown): void {
+  const tmp = `${out}.neatroots-tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(doc));
+    fs.renameSync(tmp, out);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    throw e;
+  }
+}
+
 export function registerDataCommands(program: Command): void {
   const imp = program
     .command("import")
@@ -104,7 +117,7 @@ export function registerDataCommands(program: Command): void {
       const p = await needRunning();
       const doc = await api<{ resourceSpans: { scopeSpans: { spans: unknown[] }[] }[] }>(p, `/api/runs/${encodeURIComponent(traceId)}/otlp`);
       const out = opts.out ?? `${traceId}.json`;
-      fs.writeFileSync(out, JSON.stringify(doc));
+      writeExport(out, doc);
       const spans = doc.resourceSpans.reduce((n, r) => n + r.scopeSpans.reduce((m, s) => m + s.spans.length, 0), 0);
       console.log(`✓ ${out}: ${spans} spans. Check it with: neatroots check ${out}`);
     });
