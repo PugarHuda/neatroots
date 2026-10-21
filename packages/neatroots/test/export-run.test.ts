@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkFiles } from "../src/checks/offline.js";
-import { writeExport } from "../src/cli/data.js";
+import { checkHint, writeExport } from "../src/cli/data.js";
 import { parseTraceFile } from "../src/ingest/importers/index.js";
 import { encodeTraceJson } from "../src/otlp/codec.js";
 import { batch, hex, llmSpan, makeRoots, span, toolSpan, type TestRoots } from "./helpers.js";
@@ -64,12 +64,26 @@ describe("neatroots export writes the file atomically", () => {
     expect(fs.readdirSync(dir).filter((f) => f.startsWith("replace.json."))).toEqual([]);
   });
 
+  it("never writes through a file planted at a predictable temp name", () => {
+    const out = path.join(dir, "planted.json");
+    // What a fixed `<out>.neatroots-tmp` would have followed (as a symlink) or truncated.
+    fs.writeFileSync(`${out}.neatroots-tmp`, "someone else's file");
+    writeExport(out, { resourceSpans: [] });
+    expect(fs.readFileSync(`${out}.neatroots-tmp`, "utf8")).toBe("someone else's file");
+    expect(JSON.parse(fs.readFileSync(out, "utf8"))).toEqual({ resourceSpans: [] });
+  });
+
   it("a write that fails part-way keeps the previous file intact", () => {
     const out = path.join(dir, "keep.json");
     fs.writeFileSync(out, '{"resourceSpans":[]}');
     // JSON.stringify throws on a BigInt: the export fails and the previous file must be untouched.
     expect(() => writeExport(out, { resourceSpans: [{ n: 1n }] })).toThrow();
     expect(fs.readFileSync(out, "utf8")).toBe('{"resourceSpans":[]}');
-    expect(fs.existsSync(`${out}.neatroots-tmp`)).toBe(false);
+    expect(fs.readdirSync(dir).filter((f) => f.startsWith("keep.json."))).toEqual([]);
+  });
+
+  it("quotes the path in the printed check command", () => {
+    expect(checkHint("abc123.json")).toBe("neatroots check abc123.json");
+    expect(checkHint("my runs/bad run.json")).toBe("neatroots check 'my runs/bad run.json'");
   });
 });
