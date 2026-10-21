@@ -50,7 +50,7 @@ export function writeExport(out: string, doc: unknown): void {
     /* a new file: umask defaults */
   }
   const tmp = `${out}.${randomBytes(6).toString("hex")}.neatroots-tmp`;
-  const fd = fs.openSync(tmp, "wx");
+  const fd = fs.openSync(tmp, "wx", mode ?? 0o666); // created private if the export it replaces is
   try {
     fs.writeFileSync(fd, json);
     if (mode !== undefined) fs.fchmodSync(fd, mode);
